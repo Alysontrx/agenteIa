@@ -140,6 +140,7 @@ const client = new Client({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     puppeteer: {
         headless: true,
+        dumpio: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: [
             '--no-sandbox',
@@ -148,7 +149,6 @@ const client = new Client({
             '--disable-gpu',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
             '--disable-extensions',
             '--disable-audio-output',
             '--js-flags="--max-old-space-size=150"',
