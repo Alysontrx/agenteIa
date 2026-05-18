@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp AI - CRM Dashboard Completo</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome para Ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Stylesheet Customizada -->
+    <link rel="stylesheet" href="style.css?v=4">
+    <style>
+        /* Estilo para Botão de Atenção/Warning */
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+            color: #ffffff !important;
+        }
+        .btn-warning:hover:not(:disabled) {
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.4) !important;
+            transform: translateY(-1px) !important;
+        }
+        
+        /* Correção de Layout Crítica Bypass Cache */
+        html, body {
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+        .crm-wrapper {
+            height: 100% !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        .tab-container {
+            flex: 1 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            height: calc(100% - 64px) !important; /* Força altura exata menos o topo */
+        }
+        .tab-content {
+            height: 100% !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+        }
+        .chat-layout {
+            display: grid !important;
+            grid-template-columns: 340px 1fr 340px !important;
+            grid-template-rows: 100% !important; /* Trava a linha em exatamente 100% */
+            height: 100% !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+        }
+        .sidebar, .chat-area, .details-sidebar {
+            height: 100% !important;
+            min-height: 0 !important;
+            max-height: 100% !important;
+            overflow: hidden !important;
+        }
+        .sidebar {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        .conversations-list {
+            flex: 1 !important;
+            overflow-y: auto !important;
+            min-height: 0 !important;
+        }
+        .details-sidebar {
+            display: flex !important;
+            flex-direction: column !important;
+            overflow-y: auto !important;
+        }
+        .chat-area {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        .messages-container {
+            flex: 1 !important;
+            overflow-y: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+        .chat-input-area {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            height: 76px !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="crm-wrapper">
+        <!-- TOPBAR DE NAVEGAÇÃO PREMIUM -->
+        <header class="crm-topbar">
+            <div class="brand-top">
+                <i class="fa-solid fa-robot brand-icon"></i>
+                <h2>WPP <span class="accent">AI CRM</span></h2>
+            </div>
+            <nav class="crm-tabs">
+                <button class="tab-btn active" data-tab="tab-chat">
+                    <i class="fa-regular fa-comments"></i> <span>Conversas</span>
+                </button>
+                <button class="tab-btn" data-tab="tab-funnel">
+                    <i class="fa-solid fa-chart-gantt"></i> <span>Funil Kanban</span>
+                </button>
+                <button class="tab-btn" data-tab="tab-settings">
+                    <i class="fa-solid fa-sliders"></i> <span>Configurações</span>
+                </button>
+            </nav>
+            <div class="status-top">
+                <span class="status-dot status-offline" id="topbar-status-dot"></span>
+                <span id="topbar-status-text">Desconectado</span>
+            </div>
+        </header>
+
+        <!-- CONTAINER DAS ABAS DINÂMICAS -->
+        <div class="tab-container">
+            
+            <!-- ABA 1: CHAT & CONVERSAS -->
+            <div id="tab-chat" class="tab-content active">
+                <div class="chat-layout">
+                    <!-- BARRA LATERAL (CONVERSAS) -->
+                    <aside class="sidebar">
+                        <div class="sidebar-header">
+                            <div class="search-box">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="search-input" placeholder="Buscar conversa...">
+                            </div>
+                        </div>
+                        <div class="conversations-list" id="conversations-list">
+                            <div class="empty-list">
+                                <i class="fa-regular fa-comments"></i>
+                                <p>Nenhuma conversa ativa</p>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <!-- ÁREA CENTRAL (CHAT) -->
+                    <main class="chat-area">
+                        <div class="chat-header" id="chat-header" style="visibility: hidden;">
+                            <div class="chat-contact-info">
+                                <div class="avatar">
+                                    <i class="fa-solid fa-user"></i>
+                                </div>
+                                <div>
+                                    <h3 id="active-contact-name">Selecione uma conversa</h3>
+                                    <span id="active-contact-phone">-</span>
+                                </div>
+                            </div>
+                            <div class="chat-actions">
+                                <button class="btn btn-ai-toggle" id="btn-toggle-ai" title="Ativar ou pausar a IA para este cliente">
+                                    <i class="fa-solid fa-robot"></i> <span>IA Ativa</span>
+                                </button>
+                                <button class="btn btn-danger" id="btn-reset-chat" title="Limpar histórico da IA para este cliente">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Resetar
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Área de Mensagens -->
+                        <div class="messages-container" id="messages-container">
+                            <div class="welcome-screen">
+                                <i class="fa-solid fa-comments"></i>
+                                <h2>Bem-vindo ao WPP AI CRM</h2>
+                                <p>Selecione um cliente ao lado para ver o histórico e interagir em tempo real.</p>
+                            </div>
+                        </div>
+
+                        <!-- Entrada de Mensagens -->
+                        <div class="chat-input-area" id="chat-input-area">
+                            <input type="text" id="message-input" placeholder="Digite uma resposta manual para intervir..." disabled>
+                            <button class="btn btn-primary" id="btn-send-message" disabled>
+                                <i class="fa-solid fa-paper-plane"></i> Enviar
+                            </button>
+                        </div>
+                    </main>
+
+                    <!-- BARRA DIREITA (DETALHES DO CONTATO & ANOTAÇÕES) -->
+                    <aside class="details-sidebar" id="details-sidebar">
+                        <div class="details-welcome" id="details-welcome">
+                            <i class="fa-regular fa-id-card"></i>
+                            <p>Selecione um contato para gerenciar informações do CRM</p>
+                        </div>
+                        <div class="details-content" id="details-content" style="display: none;">
+                            <div class="details-header">
+                                <div class="details-avatar">
+                                    <i class="fa-solid fa-user"></i>
+                                </div>
+                                <h3 id="details-name">-</h3>
+                                <span id="details-phone">-</span>
+                            </div>
+
+                            <!-- Etapa no Kanban -->
+                            <div class="details-section">
+                                <h4><i class="fa-solid fa-rectangle-list"></i> Etapa no Funil</h4>
+                                <select id="select-funnel-stage" class="stage-select">
+                                    <option value="lead">📥 Novo Lead</option>
+                                    <option value="progress">💬 Em Atendimento</option>
+                                    <option value="quote">📝 Orçamento Criado</option>
+                                    <option value="won">🏆 Venda Fechada (Ganho)</option>
+                                    <option value="lost">❌ Perdido</option>
+                                </select>
+                            </div>
+
+                            <!-- Anotações do Cliente -->
+                            <div class="details-section">
+                                <h4><i class="fa-regular fa-clipboard"></i> Anotações do Cliente</h4>
+                                <textarea id="textarea-client-notes" placeholder="Adicione dados importantes (ex: modelo do veículo, peças necessárias, preços orçados)..."></textarea>
+                                <button class="btn btn-success btn-full" id="btn-save-notes">
+                                    <i class="fa-solid fa-floppy-disk"></i> Salvar Observações
+                                </button>
+                            </div>
+
+                            <!-- Mute da IA no Painel Lateral -->
+                            <div class="details-section">
+                                <h4><i class="fa-solid fa-gears"></i> Controle de Resposta</h4>
+                                <div class="ai-control-box">
+                                    <p>Deixe o robô responder ou pause a automação para assumir o controle:</p>
+                                    <button class="btn btn-ai-toggle btn-full" id="btn-sidebar-toggle-ai">
+                                        <i class="fa-solid fa-robot"></i> <span>IA Ativa</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <!-- ABA 2: FUNIL KANBAN -->
+            <div id="tab-funnel" class="tab-content">
+                <div class="kanban-layout">
+                    <div class="kanban-header">
+                        <h2><i class="fa-solid fa-chart-gantt"></i> Funil de Vendas Integrado</h2>
+                        <p>Gerencie e mova seus leads entre as colunas para fechar vendas mais rapidamente.</p>
+                    </div>
+                    
+                    <div class="kanban-columns">
+                        <!-- Coluna 1: Novo Lead -->
+                        <div class="kanban-column" data-stage="lead">
+                            <div class="column-header">
+                                <span class="dot-indicator lead-dot"></span>
+                                <h3>📥 Novo Lead</h3>
+                                <span class="card-count" id="count-lead">0</span>
+                            </div>
+                            <div class="kanban-cards" id="cards-lead" ondragover="allowDrop(event)" ondrop="dropCard(event, 'lead')"></div>
+                        </div>
+
+                        <!-- Coluna 2: Em Atendimento -->
+                        <div class="kanban-column" data-stage="progress">
+                            <div class="column-header">
+                                <span class="dot-indicator progress-dot"></span>
+                                <h3>💬 Em Atendimento</h3>
+                                <span class="card-count" id="count-progress">0</span>
+                            </div>
+                            <div class="kanban-cards" id="cards-progress" ondragover="allowDrop(event)" ondrop="dropCard(event, 'progress')"></div>
+                        </div>
+
+                        <!-- Coluna 3: Orçamento Criado -->
+                        <div class="kanban-column" data-stage="quote">
+                            <div class="column-header">
+                                <span class="dot-indicator quote-dot"></span>
+                                <h3>📝 Orçamento</h3>
+                                <span class="card-count" id="count-quote">0</span>
+                            </div>
+                            <div class="kanban-cards" id="cards-quote" ondragover="allowDrop(event)" ondrop="dropCard(event, 'quote')"></div>
+                        </div>
+
+                        <!-- Coluna 4: Venda Fechada -->
+                        <div class="kanban-column" data-stage="won">
+                            <div class="column-header">
+                                <span class="dot-indicator won-dot"></span>
+                                <h3>🏆 Venda Concluída</h3>
+                                <span class="card-count" id="count-won">0</span>
+                            </div>
+                            <div class="kanban-cards" id="cards-won" ondragover="allowDrop(event)" ondrop="dropCard(event, 'won')"></div>
+                        </div>
+
+                        <!-- Coluna 5: Perdido -->
+                        <div class="kanban-column" data-stage="lost">
+                            <div class="column-header">
+                                <span class="dot-indicator lost-dot"></span>
+                                <h3>❌ Perdido</h3>
+                                <span class="card-count" id="count-lost">0</span>
+                            </div>
+                            <div class="kanban-cards" id="cards-lost" ondragover="allowDrop(event)" ondrop="dropCard(event, 'lost')"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ABA 3: CONFIGURAÇÕES -->
+            <div id="tab-settings" class="tab-content">
+                <div class="settings-layout">
+                    <div class="settings-grid">
+                        
+                        <!-- Coluna Esquerda: Comportamento IA -->
+                        <div class="glass-card prompt-card">
+                            <h3><i class="fa-solid fa-sliders"></i> Instruções do Atendente Gemini</h3>
+                            <p>Modifique a personalidade, regras de negócios ou scripts de vendas em tempo real:</p>
+                            <textarea id="prompt-input" rows="18" placeholder="Escreva as diretrizes da IA..."></textarea>
+                            <button class="btn btn-success btn-full" id="btn-save-prompt">
+                                <i class="fa-solid fa-floppy-disk"></i> Salvar Personalidade
+                            </button>
+                        </div>
+
+                        <!-- Coluna Direita: Métricas & Conexão -->
+                        <div class="settings-side">
+                            <!-- Conexão WhatsApp -->
+                            <div class="glass-card status-card">
+                                <h3><i class="fa-solid fa-signal"></i> Status do WhatsApp</h3>
+                                <div class="status-indicator" id="status-indicator">
+                                    <span class="status-dot status-offline"></span>
+                                    <span class="status-text">Desconectado</span>
+                                </div>
+                                
+                                <div class="qr-container" id="qr-container" style="display: none;">
+                                    <p>Escaneie o código abaixo com o aplicativo do WhatsApp:</p>
+                                    <div class="qr-code-wrapper">
+                                        <img id="qr-image" src="" alt="WhatsApp QR Code">
+                                    </div>
+                                    <div class="qr-loader">
+                                        <i class="fa-solid fa-spinner fa-spin"></i> Atualizando código...
+                                    </div>
+                                </div>
+                                
+                                <button class="btn btn-warning btn-full" id="btn-reset-connection" style="margin-top: 20px;" title="Limpa o cache do navegador no servidor e gera um QR Code completamente novo. Use se estiver travado no celular.">
+                                    <i class="fa-solid fa-circle-exclamation"></i> Resetar Conexão WhatsApp (Limpar Cache)
+                                </button>
+                            </div>
+
+                            <!-- Métricas do Funil -->
+                            <div class="glass-card stats-card">
+                                <h3><i class="fa-solid fa-chart-pie"></i> Desempenho do Funil</h3>
+                                <div class="stats-grid">
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="metric-total-leads">0</span>
+                                        <span class="stat-label">Total Leads</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value" id="metric-total-messages">0</span>
+                                        <span class="stat-label">Mensagens</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Container de Toast customizado -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Bibliotecas e Javascript Principal -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js?v=2"></script>
+</body>
+</html>

@@ -130,32 +130,49 @@ app.use(express.json());
 // ==========================================
 // 5. CONFIGURAR CLIENTE DO WHATSAPP
 // ==========================================
-console.log('[WhatsApp] Inicializando cliente...');
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1039703269-alpha.html'
-    },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    puppeteer: {
-        headless: true,
-        dumpio: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-extensions',
-            '--disable-audio-output',
-            '--js-flags="--max-old-space-size=150"',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        ]
+let client = null;
+
+function initializeWhatsAppClient(shouldInitialize = true) {
+    console.log('[WhatsApp] Inicializando cliente...');
+    
+    if (client) {
+        // Remove listeners antigos para evitar vazamentos e duplicidade
+        try {
+            client.removeAllListeners('qr');
+            client.removeAllListeners('ready');
+            client.removeAllListeners('disconnected');
+            client.removeAllListeners('message_create');
+            client.removeAllListeners('loading_screen');
+        } catch (e) {
+            console.log('[WhatsApp] Erro ao remover listeners anteriores:', e.message);
+        }
     }
-});
+
+    client = new Client({
+        authStrategy: new LocalAuth(),
+        webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html' // Versão estável recomendada
+        },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        puppeteer: {
+            headless: true,
+            dumpio: true,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-extensions',
+                '--disable-audio-output',
+                '--js-flags="--max-old-space-size=150"',
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            ]
+        }
+    });
 
 /**
  * Cria ou recupera a sessão de chat do Gemini para um contato específico
@@ -178,119 +195,136 @@ function getOrCreateChatSession(phone) {
     return activeChats.get(phone);
 }
 
-// Evento: QR Code recebido
-client.on('qr', (qr) => {
-    console.log('[WhatsApp] QR Code recebido.');
-    qrcode.generate(qr, { small: true });
-    whatsappStatus = 'scanning';
-    currentQrCode = qr;
-    
-    // Notifica todos os navegadores abertos
-    io.emit('status-update', { status: whatsappStatus, qr: currentQrCode });
-});
+    // Evento: QR Code recebido
+    client.on('qr', (qr) => {
+        console.log('[WhatsApp] QR Code recebido.');
+        qrcode.generate(qr, { small: true });
+        whatsappStatus = 'scanning';
+        currentQrCode = qr;
+        
+        // Notifica todos os navegadores abertos
+        io.emit('status-update', { status: whatsappStatus, qr: currentQrCode });
+    });
 
-// Evento: WhatsApp Pronto
-client.on('ready', () => {
-    console.log('[WhatsApp] Conectado e pronto!');
-    whatsappStatus = 'connected';
-    currentQrCode = null;
-    io.emit('status-update', { status: whatsappStatus, qr: null });
-});
+    // Evento: Progresso de Carregamento (Visual feedback!)
+    client.on('loading_screen', (percent, message) => {
+        console.log(`[WhatsApp] Carregando: ${percent}% - ${message}`);
+        whatsappStatus = 'loading';
+        io.emit('status-update', { status: whatsappStatus, percent, message });
+    });
 
-// Evento: Desconectado
-client.on('disconnected', (reason) => {
-    console.log('[WhatsApp] Desconectado:', reason);
-    whatsappStatus = 'disconnected';
-    currentQrCode = null;
-    io.emit('status-update', { status: whatsappStatus, qr: null });
-});
+    // Evento: WhatsApp Pronto
+    client.on('ready', () => {
+        console.log('[WhatsApp] Conectado e pronto!');
+        whatsappStatus = 'connected';
+        currentQrCode = null;
+        io.emit('status-update', { status: whatsappStatus, qr: null });
+    });
 
-// Evento: Mensagem criada/enviada/recebida no WhatsApp (Captura tudo!)
-client.on('message_create', async (message) => {
-    try {
-        // Ignora mensagens de grupo, newsletter e broadcast
-        if (message.from.includes('@g.us') || message.from.includes('@newsletter') || message.from.includes('@broadcast')) return;
+    // Evento: Desconectado
+    client.on('disconnected', (reason) => {
+        console.log('[WhatsApp] Desconectado:', reason);
+        whatsappStatus = 'disconnected';
+        currentQrCode = null;
+        io.emit('status-update', { status: whatsappStatus, qr: null });
+    });
 
-        // O id remoto da mensagem é a forma mais rápida e síncrona de agrupar a conversa
-        let phone = message.id.remote;
-
-        // Evita processar a própria conta de serviço
-        if (phone === client.info?.wid?._serialized) return;
-
-        let name = phone.split('@')[0];
-
-        // Tenta obter contato de forma assíncrona usando o id remoto da conversa (sempre o Lead)
+    // Evento: Mensagem criada/enviada/recebida no WhatsApp (Captura tudo!)
+    client.on('message_create', async (message) => {
         try {
-            const contact = await client.getContactById(phone);
-            if (contact) {
-                name = contact.name || contact.pushname || name;
-                if (contact.number) {
-                    phone = `${contact.number}@c.us`;
+            // Ignora mensagens de grupo, newsletter e broadcast
+            if (message.from.includes('@g.us') || message.from.includes('@newsletter') || message.from.includes('@broadcast')) return;
+
+            // O id remoto da mensagem é a forma mais rápida e síncrona de agrupar a conversa
+            let phone = message.id.remote;
+
+            // Evita processar a própria conta de serviço
+            if (phone === client.info?.wid?._serialized) return;
+
+            let name = phone.split('@')[0];
+
+            // Tenta obter contato de forma assíncrona usando o id remoto da conversa (sempre o Lead)
+            try {
+                const contact = await client.getContactById(phone);
+                if (contact) {
+                    name = contact.name || contact.pushname || name;
+                    if (contact.number) {
+                        phone = `${contact.number}@c.us`;
+                    }
+                }
+            } catch(err) {
+                console.log('[CRM] Aviso ao obter detalhes do contato:', err.message);
+            }
+
+            // Determina quem enviou para salvar corretamente no CRM
+            let sender = 'client';
+            if (message.fromMe) {
+                // Se foi enviado por nós, pode ter sido manual (CRM) ou automático (IA)
+                const isManual = pendingManualMessages.has(phone) && pendingManualMessages.get(phone) === message.body;
+                if (isManual) {
+                    sender = 'agent';
+                    pendingManualMessages.delete(phone); // Consome flag
+                } else {
+                    sender = 'ai';
                 }
             }
-        } catch(err) {
-            console.log('[CRM] Aviso ao obter detalhes do contato:', err.message);
+
+            // 1. Registrar a mensagem no histórico do CRM (evita duplicidade interna)
+            addMessageToHistory(phone, name, sender, message.body);
+
+            // Se a mensagem foi RECEBIDA de um cliente externo, processamos a resposta da IA
+            if (!message.fromMe) {
+                // Se for comando manual de reset
+                if (message.body.trim().toLowerCase() === '!reset') {
+                    activeChats.delete(phone);
+                    conversations.delete(phone);
+                    await message.reply('🔄 Histórico de conversa limpo! Como posso te ajudar agora?');
+                    io.emit('chat-reset', { phone });
+                    return;
+                }
+
+                // Se a IA estiver pausada para este cliente, ignora a resposta automática
+                const conv = conversations.get(phone);
+                if (conv && conv.aiEnabled === false) {
+                    console.log(`[Gemini] IA ignorada para ${phone} devido à intervenção humana ativa.`);
+                    return;
+                }
+
+                // 2. Transmitir ao frontend que o cliente está digitando
+                io.emit('typing', { phone, typing: true });
+
+                // 3. Processar mensagem com o Gemini ou resposta demo
+                const chat = await message.getChat();
+                await chat.sendStateTyping();
+
+                let responseText = '';
+                if (isGeminiConfigured) {
+                    const chatSession = getOrCreateChatSession(phone);
+                    const result = await chatSession.sendMessage(message.body);
+                    responseText = result.response.text();
+                } else {
+                    responseText = '⚠️ Olá! Este assistente virtual de WhatsApp está atualmente em modo de testes locais (demonstração).\n\nPara ativar a Inteligência Artificial completa com o Gemini, configure a variável `GEMINI_API_KEY` no arquivo `.env` da aplicação!';
+                }
+
+                // 4. Responder no WhatsApp (Isso vai disparar outro evento message_create com fromMe: true que salvará como 'ai')
+                await message.reply(responseText);
+                await chat.clearState();
+            }
+
+        } catch (err) {
+            console.error('[Erro] Falha ao processar mensagem (message_create):', err);
         }
+    });
 
-        // Determina quem enviou para salvar corretamente no CRM
-        let sender = 'client';
-        if (message.fromMe) {
-            // Se foi enviado por nós, pode ter sido manual (CRM) ou automático (IA)
-            const isManual = pendingManualMessages.has(phone) && pendingManualMessages.get(phone) === message.body;
-            if (isManual) {
-                sender = 'agent';
-                pendingManualMessages.delete(phone); // Consome flag
-            } else {
-                sender = 'ai';
-            }
-        }
-
-        // 1. Registrar a mensagem no histórico do CRM (evita duplicidade interna)
-        addMessageToHistory(phone, name, sender, message.body);
-
-        // Se a mensagem foi RECEBIDA de um cliente externo, processamos a resposta da IA
-        if (!message.fromMe) {
-            // Se for comando manual de reset
-            if (message.body.trim().toLowerCase() === '!reset') {
-                activeChats.delete(phone);
-                conversations.delete(phone);
-                await message.reply('🔄 Histórico de conversa limpo! Como posso te ajudar agora?');
-                io.emit('chat-reset', { phone });
-                return;
-            }
-
-            // Se a IA estiver pausada para este cliente, ignora a resposta automática
-            const conv = conversations.get(phone);
-            if (conv && conv.aiEnabled === false) {
-                console.log(`[Gemini] IA ignorada para ${phone} devido à intervenção humana ativa.`);
-                return;
-            }
-
-            // 2. Transmitir ao frontend que o cliente está digitando
-            io.emit('typing', { phone, typing: true });
-
-            // 3. Processar mensagem com o Gemini ou resposta demo
-            const chat = await message.getChat();
-            await chat.sendStateTyping();
-
-            let responseText = '';
-            if (isGeminiConfigured) {
-                const chatSession = getOrCreateChatSession(phone);
-                const result = await chatSession.sendMessage(message.body);
-                responseText = result.response.text();
-            } else {
-                responseText = '⚠️ Olá! Este assistente virtual de WhatsApp está atualmente em modo de testes locais (demonstração).\n\nPara ativar a Inteligência Artificial completa com o Gemini, configure a variável `GEMINI_API_KEY` no arquivo `.env` da aplicação!';
-            }
-
-            // 4. Responder no WhatsApp (Isso vai disparar outro evento message_create com fromMe: true que salvará como 'ai')
-            await message.reply(responseText);
-            await chat.clearState();
-        }
-
-    } catch (err) {
-        console.error('[Erro] Falha ao processar mensagem (message_create):', err);
+    if (shouldInitialize) {
+        client.initialize().catch(err => {
+            console.error('[WhatsApp] Falha ao inicializar o cliente WhatsApp:', err);
+        });
     }
-});
+}
+
+// Inicializa a referência do cliente sem rodar o navegador imediatamente
+initializeWhatsAppClient(false);
 
 /**
  * Adiciona uma mensagem ao histórico da conversa e notifica o frontend
@@ -556,6 +590,46 @@ io.on('connection', (socket) => {
             console.log(`[CRM] Cliente ${phone} movido para a etapa Kanban: ${stage}`);
         }
     });
+
+    // Evento: Resetar Conexão Completa do WhatsApp (Limpar cache de nuvem)
+    socket.on('reset-whatsapp-connection', async () => {
+        console.log('[WhatsApp] Recebido pedido para resetar conexão e limpar cache...');
+        try {
+            whatsappStatus = 'disconnected';
+            currentQrCode = null;
+            io.emit('status-update', { status: 'disconnected', qr: null });
+            
+            // 1. Destrói o cliente antigo de forma limpa para fechar o browser
+            if (client) {
+                try {
+                    await client.destroy();
+                    console.log('[WhatsApp] Cliente antigo destruído.');
+                } catch (e) {
+                    console.log('[WhatsApp] Erro ao destruir cliente antigo:', e.message);
+                }
+            }
+            
+            // 2. Remove o diretório .wwebjs_auth para limpar cache
+            const authPath = path.join(__dirname, '.wwebjs_auth');
+            if (fs.existsSync(authPath)) {
+                try {
+                    fs.rmSync(authPath, { recursive: true, force: true });
+                    console.log('[WhatsApp] Diretório .wwebjs_auth excluído com sucesso.');
+                } catch (e) {
+                    console.error('[WhatsApp] Erro ao remover diretório .wwebjs_auth:', e);
+                }
+            }
+            
+            // 3. Recria o cliente e inicializa
+            initializeWhatsAppClient(true);
+            
+            // Retorna o status inicial desconectado para forçar a renderização do novo QR
+            io.emit('status-update', { status: 'disconnected', qr: null });
+        } catch (err) {
+            console.error('[WhatsApp] Erro crítico ao resetar conexão:', err);
+            socket.emit('error-msg', { message: 'Erro crítico ao redefinir a conexão do WhatsApp.' });
+        }
+    });
 });
 
 /**
@@ -628,6 +702,6 @@ server.listen(PORT, () => {
     console.log('[WhatsApp] Agendando inicialização do navegador em 5 segundos...');
     setTimeout(() => {
         console.log('[WhatsApp] Inicializando navegador em segundo plano...');
-        client.initialize();
+        initializeWhatsAppClient(true);
     }, 5000);
 });

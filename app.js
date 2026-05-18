@@ -134,14 +134,25 @@ socket.on('conversations-loaded', (conversations) => {
 socket.on('status-update', (data) => {
     console.log('[Socket] Atualização de Status:', data);
     appState.whatsappStatus = data.status;
-    updateWhatsappStatusUI(data.status, data.qr);
+    updateWhatsappStatusUI(data.status, data.qr, data.percent, data.message);
 });
 
-function updateWhatsappStatusUI(status, qr) {
+function updateWhatsappStatusUI(status, qr, percent = null, message = null) {
     // Reset indicators
     if (elStatusDot) elStatusDot.className = 'status-dot';
     if (elTopbarStatusDot) elTopbarStatusDot.className = 'status-dot';
     
+    // Restaura o botão de reset
+    const elBtnResetConnection = document.getElementById('btn-reset-connection');
+    if (elBtnResetConnection) {
+        elBtnResetConnection.disabled = false;
+        elBtnResetConnection.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Resetar Conexão WhatsApp (Limpar Cache)';
+    }
+
+    // Remove loader anterior de sincronização se houver
+    const elQrLoader = document.getElementById('qr-loader');
+    if (elQrLoader) elQrLoader.remove();
+
     if (status === 'connected') {
         if (elStatusDot) elStatusDot.classList.add('status-online');
         if (elStatusText) elStatusText.textContent = 'Conectado';
@@ -151,6 +162,35 @@ function updateWhatsappStatusUI(status, qr) {
         
         if (elQrContainer) elQrContainer.style.display = 'none';
         showToast('WhatsApp está online e ativo!', 'success');
+    } else if (status === 'loading') {
+        if (elStatusDot) elStatusDot.classList.add('status-connecting');
+        if (elStatusText) elStatusText.textContent = `Sincronizando (${percent || 0}%)`;
+        
+        if (elTopbarStatusDot) elTopbarStatusDot.classList.add('status-connecting');
+        if (elTopbarStatusText) elTopbarStatusText.textContent = `Carregando...`;
+        
+        if (elQrContainer) {
+            elQrContainer.style.display = 'block';
+            if (elQrImage) elQrImage.style.display = 'none';
+            
+            // Cria um painel visual de loading de sincronização premium
+            const loaderDiv = document.createElement('div');
+            loaderDiv.id = 'qr-loader';
+            loaderDiv.className = 'welcome-screen';
+            loaderDiv.style.marginTop = '20px';
+            loaderDiv.style.padding = '20px';
+            loaderDiv.style.background = 'rgba(255, 255, 255, 0.02)';
+            loaderDiv.style.borderRadius = '12px';
+            loaderDiv.style.border = '1px solid rgba(255, 255, 255, 0.05)';
+            
+            loaderDiv.innerHTML = `
+                <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 32px; color: var(--primary-color);"></i>
+                <h3 style="margin-top: 10px; font-size: 16px;">Sincronizando Mensagens...</h3>
+                <p style="font-size: 13px; color: var(--color-text-muted); margin-top: 4px;">${message || 'Carregando histórico do celular'}</p>
+                <div style="font-weight: 700; margin-top: 10px; color: #8b5cf6; font-size: 18px;">${percent || 0}%</div>
+            `;
+            elQrContainer.appendChild(loaderDiv);
+        }
     } else if (status === 'scanning') {
         if (elStatusDot) elStatusDot.classList.add('status-connecting');
         if (elStatusText) elStatusText.textContent = 'Aguardando QR Code';
@@ -159,8 +199,13 @@ function updateWhatsappStatusUI(status, qr) {
         if (elTopbarStatusText) elTopbarStatusText.textContent = 'Escanear QR';
         
         if (qr) {
-            if (elQrContainer) elQrContainer.style.display = 'block';
-            if (elQrImage) elQrImage.src = `https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=${encodeURIComponent(qr)}`;
+            if (elQrContainer) {
+                elQrContainer.style.display = 'block';
+                if (elQrImage) {
+                    elQrImage.style.display = 'block';
+                    elQrImage.src = `https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=${encodeURIComponent(qr)}`;
+                }
+            }
         }
     } else {
         if (elStatusDot) elStatusDot.classList.add('status-offline');
@@ -198,14 +243,23 @@ function selectConversation(phone) {
     }
     if (elBtnSendMessage) elBtnSendMessage.disabled = false;
 
-    // Se o chat ainda não tem mensagens carregadas, mostra o indicador de loading
+    // Se o chat ainda não tem mensagens carregadas, mostra o indicador de loading ou aviso de conexão
     if (!conv.messages || conv.messages.length === 0) {
-        elMessagesContainer.innerHTML = `
-            <div class="welcome-screen">
-                <i class="fa-solid fa-circle-notch fa-spin"></i>
-                <h2>Buscando histórico real...</h2>
-                <p>Sincronizando as últimas mensagens do seu celular.</p>
-            </div>`;
+        if (appState.whatsappStatus !== 'connected') {
+            elMessagesContainer.innerHTML = `
+                <div class="welcome-screen">
+                    <i class="fa-solid fa-circle-exclamation" style="font-size: 48px; color: #ef4444; filter: drop-shadow(0 4px 12px rgba(239, 68, 68, 0.2));"></i>
+                    <h2 style="color: var(--color-text-main);">WhatsApp Não Conectado</h2>
+                    <p style="max-width: 350px;">⚠️ Para sincronizar este chat e interagir em tempo real, por favor acesse a aba <strong>Configurações</strong> no menu superior e escaneie o QR Code.</p>
+                </div>`;
+        } else {
+            elMessagesContainer.innerHTML = `
+                <div class="welcome-screen">
+                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                    <h2>Buscando histórico real...</h2>
+                    <p>Sincronizando as últimas mensagens do seu celular.</p>
+                </div>`;
+        }
     } else {
         renderActiveChatMessages();
     }
@@ -820,3 +874,16 @@ function formatTime(timestamp) {
 socket.on('error-msg', (data) => {
     showToast(data.message, 'error');
 });
+
+// Evento: Clique no Botão de Resetar Conexão WhatsApp
+const elBtnResetConnection = document.getElementById('btn-reset-connection');
+if (elBtnResetConnection) {
+    elBtnResetConnection.addEventListener('click', () => {
+        if (confirm('⚠️ ATENÇÃO: Deseja resetar a conexão com o WhatsApp?\n\nIsso encerrará o navegador no servidor e limpará todos os arquivos de sessão corrompidos. Use esta opção se o WhatsApp estiver travado no celular ou na tela de "Carregando...".\n\nUm novo QR Code será gerado na tela em alguns segundos.')) {
+            elBtnResetConnection.disabled = true;
+            elBtnResetConnection.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetando conexão...';
+            socket.emit('reset-whatsapp-connection');
+            showToast('Limpando cache e reiniciando o WhatsApp Web...', 'info');
+        }
+    });
+}
