@@ -376,18 +376,10 @@ io.on('connection', (socket) => {
     // Carrega a lista real de conversas ativas no WhatsApp em segundo plano
     if (whatsappStatus === 'connected') {
         console.log('[Socket.io] Carregando chats reais do WhatsApp em segundo plano...');
-        client.getChats().then(async (chats) => {
+        client.getChats().then((chats) => {
             const activeChatsOnPhone = chats.filter(c => !c.isGroup && (c.id._serialized.includes('@c.us') || c.id._serialized.includes('@lid'))).slice(0, 15);
             for (const chat of activeChatsOnPhone) {
-                let phone = chat.id._serialized;
-                try {
-                    const contact = await chat.getContact();
-                    if (contact && contact.number) {
-                        phone = `${contact.number}@c.us`;
-                    }
-                } catch (err) {
-                    console.error('[CRM] Erro ao obter contato para normalização:', err);
-                }
+                const phone = chat.id._serialized;
                 const name = chat.name || phone.split('@')[0];
                 
                 if (!conversations.has(phone)) {
