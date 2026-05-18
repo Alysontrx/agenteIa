@@ -13,6 +13,16 @@
     <!-- Stylesheet Customizada -->
     <link rel="stylesheet" href="style.css?v=4">
     <style>
+        /* Estilo para Botão de Atenção/Warning */
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+            color: #ffffff !important;
+        }
+        .btn-warning:hover:not(:disabled) {
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.4) !important;
+            transform: translateY(-1px) !important;
+        }
+        
         /* Correção de Layout Crítica Bypass Cache */
         html, body {
             height: 100% !important;
@@ -318,6 +328,10 @@
                                         <i class="fa-solid fa-spinner fa-spin"></i> Atualizando código...
                                     </div>
                                 </div>
+                                
+                                <button class="btn btn-warning btn-full" id="btn-reset-connection" style="margin-top: 20px;" title="Limpa o cache do navegador no servidor e gera um QR Code completamente novo. Use se estiver travado no celular.">
+                                    <i class="fa-solid fa-circle-exclamation"></i> Resetar Conexão WhatsApp (Limpar Cache)
+                                </button>
                             </div>
 
                             <!-- Métricas do Funil -->
