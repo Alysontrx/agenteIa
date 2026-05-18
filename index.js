@@ -135,7 +135,7 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1039703269-alpha.html'
     },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     puppeteer: {
@@ -151,6 +151,7 @@ const client = new Client({
             '--single-process',
             '--disable-extensions',
             '--disable-audio-output',
+            '--js-flags="--max-old-space-size=150"',
             '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         ]
     }
@@ -355,8 +356,8 @@ async function getChatByPhone(phone) {
     }
 }
 
-// Inicializa a conexão do WhatsApp
-client.initialize();
+// Inicialização do WhatsApp adiada para após o servidor Express subir
+
 
 // ==========================================
 // 6. EVENTOS DO SOCKET.IO (COMUNICACÃO DASHBOARD)
@@ -630,4 +631,11 @@ server.listen(PORT, () => {
     console.log(`🚀 CRM Dashboard Online!`);
     console.log(`👉 Acesse no navegador: http://localhost:${PORT}`);
     console.log(`======================================================\n`);
+
+    // Inicializa a conexão do WhatsApp de forma assíncrona após 5 segundos
+    console.log('[WhatsApp] Agendando inicialização do navegador em 5 segundos...');
+    setTimeout(() => {
+        console.log('[WhatsApp] Inicializando navegador em segundo plano...');
+        client.initialize();
+    }, 5000);
 });
