@@ -40,11 +40,14 @@ function saveSystemInstruction(newInstruction) {
 
 // 2. Chave do Gemini
 const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey || apiKey === 'SUA_CHAVE_DO_GEMINI_AQUI') {
-    console.error('\nERRO: GEMINI_API_KEY não está configurada no .env!\n');
-    process.exit(1);
+const isGeminiConfigured = apiKey && apiKey !== 'SUA_CHAVE_DO_GEMINI_AQUI';
+let genAI = null;
+
+if (!isGeminiConfigured) {
+    console.warn('\n⚠️ AVISO: GEMINI_API_KEY não está configurada no .env! O bot funcionará em modo de demonstração (respostas automáticas de demonstração).\n');
+} else {
+    genAI = new GoogleGenerativeAI(apiKey);
 }
-const genAI = new GoogleGenerativeAI(apiKey);
 
 // ==========================================
 // 3. ESTRUTURA DE DADOS & PERSISTÊNCIA LOCAL
@@ -147,6 +150,7 @@ const client = new Client({
  * Obtém sempre as instruções mais recentes do arquivo config.json
  */
 function getOrCreateChatSession(phone) {
+    if (!isGeminiConfigured) return null;
     if (!activeChats.has(phone)) {
         console.log(`[Gemini] Criando nova sessão de chat para: ${phone}`);
         const instruction = loadSystemInstruction();
@@ -192,19 +196,29 @@ client.on('disconnected', (reason) => {
 // Evento: Mensagem criada/enviada/recebida no WhatsApp (Captura tudo!)
 client.on('message_create', async (message) => {
     try {
-        // Ignora mensagens de grupo
-        if (message.from.includes('@g.us')) return;
+        // Ignora mensagens de grupo, newsletter e broadcast
+        if (message.from.includes('@g.us') || message.from.includes('@newsletter') || message.from.includes('@broadcast')) return;
 
-        // Se for enviado por nós, o destinatário é o cliente (message.to)
-        // Se for enviado pelo cliente, o remetente é o cliente (message.from)
-        const phone = message.fromMe ? message.to : message.from;
-        
-        // Evita processar a própria conta de serviço como cliente (caso mande mensagem para si mesmo)
+        // O id remoto da mensagem é a forma mais rápida e síncrona de agrupar a conversa
+        let phone = message.id.remote;
+
+        // Evita processar a própria conta de serviço
         if (phone === client.info?.wid?._serialized) return;
 
-        // Obter informações do contato
-        const contact = await message.getContact();
-        const name = contact.name || contact.pushname || phone.split('@')[0];
+        let name = phone.split('@')[0];
+
+        // Tenta obter contato de forma assíncrona usando o id remoto da conversa (sempre o Lead)
+        try {
+            const contact = await client.getContactById(phone);
+            if (contact) {
+                name = contact.name || contact.pushname || name;
+                if (contact.number) {
+                    phone = `${contact.number}@c.us`;
+                }
+            }
+        } catch(err) {
+            console.log('[CRM] Aviso ao obter detalhes do contato:', err.message);
+        }
 
         // Determina quem enviou para salvar corretamente no CRM
         let sender = 'client';
@@ -243,13 +257,18 @@ client.on('message_create', async (message) => {
             // 2. Transmitir ao frontend que o cliente está digitando
             io.emit('typing', { phone, typing: true });
 
-            // 3. Processar mensagem com o Gemini
+            // 3. Processar mensagem com o Gemini ou resposta demo
             const chat = await message.getChat();
             await chat.sendStateTyping();
 
-            const chatSession = getOrCreateChatSession(phone);
-            const result = await chatSession.sendMessage(message.body);
-            const responseText = result.response.text();
+            let responseText = '';
+            if (isGeminiConfigured) {
+                const chatSession = getOrCreateChatSession(phone);
+                const result = await chatSession.sendMessage(message.body);
+                responseText = result.response.text();
+            } else {
+                responseText = '⚠️ Olá! Este assistente virtual de WhatsApp está atualmente em modo de testes locais (demonstração).\n\nPara ativar a Inteligência Artificial completa com o Gemini, configure a variável `GEMINI_API_KEY` no arquivo `.env` da aplicação!';
+            }
 
             // 4. Responder no WhatsApp (Isso vai disparar outro evento message_create com fromMe: true que salvará como 'ai')
             await message.reply(responseText);
@@ -302,6 +321,29 @@ function addMessageToHistory(phone, name, sender, body) {
     saveDatabase();
 }
 
+// Helper robusto para obter o chat a partir do número/JID (evita "No LID for user")
+async function getChatByPhone(phone) {
+    try {
+        const chats = await client.getChats();
+        for (const c of chats) {
+            if (c.id._serialized === phone) {
+                return c;
+            }
+            try {
+                const contact = await c.getContact();
+                if (contact && contact.number && `${contact.number}@c.us` === phone) {
+                    return c;
+                }
+            } catch (err) {}
+        }
+        // Fallback: tenta obter diretamente pelo id
+        return await client.getChatById(phone);
+    } catch (err) {
+        console.log(`[CRM] Erro ao buscar chat para ${phone}:`, err.message);
+        return null;
+    }
+}
+
 // Inicializa a conexão do WhatsApp
 client.initialize();
 
@@ -323,9 +365,17 @@ io.on('connection', (socket) => {
     if (whatsappStatus === 'connected') {
         console.log('[Socket.io] Carregando chats reais do WhatsApp em segundo plano...');
         client.getChats().then(async (chats) => {
-            const activeChatsOnPhone = chats.filter(c => !c.isGroup && c.id._serialized.includes('@c.us')).slice(0, 15);
+            const activeChatsOnPhone = chats.filter(c => !c.isGroup && (c.id._serialized.includes('@c.us') || c.id._serialized.includes('@lid'))).slice(0, 15);
             for (const chat of activeChatsOnPhone) {
-                const phone = chat.id._serialized;
+                let phone = chat.id._serialized;
+                try {
+                    const contact = await chat.getContact();
+                    if (contact && contact.number) {
+                        phone = `${contact.number}@c.us`;
+                    }
+                } catch (err) {
+                    console.error('[CRM] Erro ao obter contato para normalização:', err);
+                }
                 const name = chat.name || phone.split('@')[0];
                 
                 if (!conversations.has(phone)) {
@@ -350,8 +400,14 @@ io.on('connection', (socket) => {
     // Evento: Carregar histórico real das últimas 50 mensagens do celular (Sob Demanda)
     socket.on('get-chat-history', async (phone) => {
         try {
+            if (whatsappStatus !== 'connected') {
+                return socket.emit('error-msg', { message: 'WhatsApp ainda não está conectado. Aguarde...' });
+            }
             console.log(`[CRM] Carregando histórico real para o número ${phone}...`);
-            const chat = await client.getChatById(phone);
+            const chat = await getChatByPhone(phone);
+            if (!chat) {
+                throw new Error('Chat não encontrado');
+            }
             const msgs = await chat.fetchMessages({ limit: 50 });
 
             // Mapeia para o formato de visualização do CRM
@@ -372,8 +428,7 @@ io.on('connection', (socket) => {
 
             // Sincroniza a memória local
             if (!conversations.has(phone)) {
-                const contact = await client.getContactById(phone);
-                const name = contact.name || contact.pushname || phone.split('@')[0];
+                const name = chat.name || phone.split('@')[0];
                 conversations.set(phone, {
                     phone,
                     name,
@@ -403,13 +458,21 @@ io.on('connection', (socket) => {
         if (!phone || !body) return;
 
         try {
+            if (whatsappStatus !== 'connected') {
+                return socket.emit('error-msg', { message: 'WhatsApp desconectado. Aguarde a conexão.' });
+            }
             console.log(`[CRM] Enviando mensagem manual para ${phone}: "${body}"`);
 
             // Salva a mensagem no flag pendente antes de enviar para sabermos que foi manual no message_create
             pendingManualMessages.set(phone, body);
 
-            // Envia mensagem pelo WhatsApp
-            await client.sendMessage(phone, body);
+            // Obtém o chat de forma robusta e envia a mensagem por ele
+            const chat = await getChatByPhone(phone);
+            if (chat) {
+                await chat.sendMessage(body);
+            } else {
+                throw new Error('Não foi possível encontrar o chat correspondente para enviar a mensagem.');
+            }
 
             // Pausa a IA automaticamente para que ela não interrompa a conversa humana
             if (conversations.has(phone)) {
@@ -496,6 +559,7 @@ io.on('connection', (socket) => {
  * Isso evita que o Gemini fique confuso ou repita respostas
  */
 function recreateGeminiHistoryWithAgentResponse(phone) {
+    if (!isGeminiConfigured) return;
     const conv = conversations.get(phone);
     if (!conv) return;
 

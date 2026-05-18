@@ -786,10 +786,26 @@ function getStageLabel(stage) {
 
 function formatPhoneNumber(phone) {
     if (!phone) return '-';
+    
+    if (phone.includes('@lid')) return 'Oculto (API)';
+
     const num = phone.split('@')[0];
-    if (num.length >= 12) {
+    
+    if (num.length >= 14) {
+        return num; 
+    }
+
+    if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
+        const ddd = num.slice(2, 4);
+        const prefix = num.slice(4, num.length - 4);
+        const suffix = num.slice(num.length - 4);
+        return `+55 (${ddd}) ${prefix}-${suffix}`;
+    }
+
+    if (num.length >= 12 && num.length <= 13) {
         return `+${num.slice(0, 2)} (${num.slice(2, 4)}) ${num.slice(4, 9)}-${num.slice(9)}`;
     }
+    
     return `+${num}`;
 }
 

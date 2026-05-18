@@ -1,24 +1,28 @@
-FROM ghcr.io/puppeteer/puppeteer:latest
+FROM node:18-slim
 
-USER root
+# Instala o Chromium e as dependências compartilhadas necessárias para o Puppeteer
+RUN apt-get update && apt-get install -y \
+    chromium \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-thai-tlwg \
+    fonts-kacst \
+    fonts-freefont-ttf \
+    libxss1 \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
-# Configurar diretório de trabalho
-WORKDIR /usr/src/app
+# Configurações do Puppeteer para usar o Chromium instalado no sistema
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Copiar arquivos de dependências
+WORKDIR /app
+
 COPY package*.json ./
-
-# Instalar dependências
 RUN npm install
 
-# Copiar todos os arquivos do projeto
 COPY . .
 
-# Ajustar permissões para garantir que o cache do whatsapp-web.js funcione
-RUN chmod -R 777 /usr/src/app
-
-# Expor a porta 3000
 EXPOSE 3000
 
-# Definir comando de inicialização
 CMD ["node", "index.js"]
